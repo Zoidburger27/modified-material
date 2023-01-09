@@ -198,7 +198,7 @@ export default class Sketch {
     // this.geometry = new THREE.SphereGeometry(1,36,36);
     this.mesh = new THREE.Mesh(
       this.geometry,
-      this.modifiedMaterial
+      this.material
       );
     this.scene.add(this.mesh);
   }
