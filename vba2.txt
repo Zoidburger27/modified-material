@@ -1,0 +1,144 @@
+Sub VishwaScript()
+    Dim wsSource As Worksheet
+    Dim wsDest As Worksheet
+    Dim lastRow As Long
+    Dim i As Long, j As Long
+    Dim destRowOffset As Long
+    Dim colIndex As Integer
+    Dim checkCols As Variant
+    Dim checkTitles As Variant
+    Dim extractCols As Variant
+    Dim colCount As Integer
+    Dim maxColWidth As Double: maxColWidth = 30
+    Dim colWidth As Double
+    Dim sectionStartRow As Long
+    Dim sectionEndRow As Long
+    Dim destSheetName As String: destSheetName = "Dashboard 2"
+    Dim startCellAddress As String: startCellAddress = "B16"
+    Dim startRow As Long, startCol As Long
+    Dim totalRowsToInsert As Long
+    Dim matchCounts(2) As Long
+    
+    ' Get sheet and cell references
+    Set wsSource = ThisWorkbook.Sheets("Master Data")
+    Set wsDest = ThisWorkbook.Sheets(destSheetName)
+    startRow = wsDest.Range(startCellAddress).Row
+    startCol = wsDest.Range(startCellAddress).Column
+
+    ' Columns to check (K, I, J)
+    checkCols = Array(11, 9, 10)
+    checkTitles = Array( _
+        "Major Incidents Since Last Report", _
+        "Major Incidents Current Week", _
+        "Major Incidents Previous Month" _
+    )
+    
+    ' Columns to extract: A, N, C, AA, B, P, R, X, AC, AM, BA, AN, AF
+    extractCols = Array(1, 14, 3, 27, 2, 16, 18, 24, 29, 39, 53, 40, 32)
+    colCount = UBound(extractCols) + 1
+    
+    lastRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+
+    ' Count how many matching rows will be added for each section
+    Dim countTotalRows As Long: countTotalRows = 0
+    For colIndex = 0 To 2
+        matchCounts(colIndex) = 0
+        For i = 2 To lastRow
+            If LCase(Trim(wsSource.Cells(i, checkCols(colIndex)).Value)) = "true" Then
+                matchCounts(colIndex) = matchCounts(colIndex) + 1
+            End If
+        Next i
+        ' Always insert 1 row for section title, 1 for count
+        countTotalRows = countTotalRows + 1
+        ' If there’s data, add space for headers and data rows
+        If matchCounts(colIndex) > 0 Then
+            countTotalRows = countTotalRows + 1 + matchCounts(colIndex)
+        End If
+        ' 2-row gap
+        countTotalRows = countTotalRows + 2
+    Next colIndex
+
+    ' Insert rows to avoid overwriting
+    wsDest.Rows(startRow & ":" & startRow + countTotalRows).Insert Shift:=xlDown
+
+    destRowOffset = 0
+    
+    ' Write content section by section
+    For colIndex = 0 To 2
+        sectionStartRow = startRow + destRowOffset
+        
+        ' Section title and count
+        With wsDest.Cells(sectionStartRow, startCol)
+            .Value = checkTitles(colIndex)
+            .Font.Bold = True
+        End With
+        With wsDest.Cells(sectionStartRow, startCol + 1)
+            .Value = matchCounts(colIndex)
+            .Font.Bold = True
+            .HorizontalAlignment = xlCenter
+        End With
+        destRowOffset = destRowOffset + 1
+        
+        If matchCounts(colIndex) > 0 Then
+            ' Headers
+            For j = 0 To UBound(extractCols)
+                With wsDest.Cells(startRow + destRowOffset, startCol + j)
+                    .Value = wsSource.Cells(1, extractCols(j)).Value
+                    .Interior.ThemeColor = xlThemeColorAccent1
+                    .Interior.TintAndShade = -0.5
+                    .Font.Bold = True
+                    .Font.Color = RGB(255, 255, 255)
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                End With
+            Next j
+            destRowOffset = destRowOffset + 1
+            
+            ' Data rows
+            For i = 2 To lastRow
+                If LCase(Trim(wsSource.Cells(i, checkCols(colIndex)).Value)) = "true" Then
+                    For j = 0 To UBound(extractCols)
+                        With wsDest.Cells(startRow + destRowOffset, startCol + j)
+                            .Value = wsSource.Cells(i, extractCols(j)).Value
+                            .Interior.ThemeColor = xlThemeColorAccent1
+                            .Interior.TintAndShade = 0.8
+                            .HorizontalAlignment = xlCenter
+                            .VerticalAlignment = xlCenter
+                        End With
+                    Next j
+                    destRowOffset = destRowOffset + 1
+                End If
+            Next i
+            
+            sectionEndRow = startRow + destRowOffset - 1
+            
+            ' Borders
+            With wsDest.Range(wsDest.Cells(sectionStartRow + 1, startCol), wsDest.Cells(sectionEndRow, startCol + colCount - 1))
+                .Borders.LineStyle = xlContinuous
+                .Borders.Weight = xlThin
+            End With
+        End If
+        
+        ' 2-row gap
+        destRowOffset = destRowOffset + 2
+    Next colIndex
+    
+    ' AutoFit columns with wrapping long columns
+    For j = 0 To colCount - 1
+        With wsDest.Columns(startCol + j)
+            .AutoFit
+            colWidth = .ColumnWidth
+            If colWidth > maxColWidth Then
+                .ColumnWidth = maxColWidth
+                .WrapText = True
+            End If
+        End With
+    Next j
+
+    wsDest.Rows(startRow & ":" & startRow + destRowOffset).AutoFit
+
+    wsDest.Activate
+    MsgBox "Finished Running Vishwa's Script", vbInformation
+End Sub
+
+
