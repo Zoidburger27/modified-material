@@ -142,3 +142,13 @@ Sub VishwaScript()
 End Sub
 
 
+CurrentWeek
+=AND(INT(C2) >= TODAY() - WEEKDAY(TODAY(), 2) + 1, INT(C2) <= TODAY() - WEEKDAY(TODAY(), 2) + 7)
+
+previous month
+=AND(MONTH(C2) = (MONTH(TODAY()) -1), YEAR(C2) = YEAR(TODAY()))
+
+last report
+=INT(C2) = TODAY()
+
+
