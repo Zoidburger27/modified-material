@@ -1,0 +1,257 @@
+Sub ExtractAllReports()
+
+    ' === CONFIGURATION ===
+    Dim sourceSheetName As String: sourceSheetName = "Master Data"
+    Dim outputSheetName As String: outputSheetName = "Results"
+    Dim matchColumn As String: matchColumn = "A"
+    Dim targetValue As String: targetValue = "Yes"
+    Dim dateColumn As String: dateColumn = "D"
+    Dim columnsToExtract As Variant
+    columnsToExtract = Array("B", "L", "D", "Y", "C", "T", "U", "V", "AA", "AK", "AY", "AL", "AD")
+
+    ' === MERGE CONFIGURATION ===
+    Dim mergedColumns As Object
+    Set mergedColumns = CreateObject("Scripting.Dictionary")
+    mergedColumns.Add "C", 3
+    mergedColumns.Add "AA", 8
+    mergedColumns.Add "AL", 2
+
+    ' === COLOR SETUP ===
+    Dim sectionTitleColor As Long: sectionTitleColor = RGB(31, 73, 125)      ' Blue Accent 1, Darker 25%
+    Dim sectionFontColor As Long: sectionFontColor = RGB(255, 255, 255)
+    Dim tableColor As Long: tableColor = RGB(189, 215, 238)                 ' Blue Accent 1, Lighter 60%
+    Dim tableFontColor As Long: tableFontColor = RGB(0, 0, 0)
+    Dim noDataColor As Long: noDataColor = RGB(0, 176, 80)                  ' Standard Green
+
+    ' === SHEET SETUP ===
+    Dim sourceWS As Worksheet, outputWS As Worksheet
+    Set sourceWS = ThisWorkbook.Sheets(sourceSheetName)
+    
+    On Error Resume Next
+    Set outputWS = ThisWorkbook.Sheets(outputSheetName)
+    If outputWS Is Nothing Then
+        Set outputWS = ThisWorkbook.Sheets.Add
+        outputWS.Name = outputSheetName
+    Else
+        outputWS.Cells.Clear
+    End If
+    On Error GoTo 0
+
+    ' === OUTPUT TABLES ===
+    Dim currentRow As Long: currentRow = 1
+
+    currentRow = WriteReportSection("Last Report", sourceWS, outputWS, columnsToExtract, matchColumn, targetValue, currentRow, "filter", dateColumn, sectionTitleColor, sectionFontColor, tableColor, tableFontColor, noDataColor, mergedColumns)
+    currentRow = WriteReportSection("Current Week", sourceWS, outputWS, columnsToExtract, matchColumn, targetValue, currentRow, "week", dateColumn, sectionTitleColor, sectionFontColor, tableColor, tableFontColor, noDataColor, mergedColumns)
+    currentRow = WriteReportSection("Previous Week", sourceWS, outputWS, columnsToExtract, matchColumn, targetValue, currentRow, "prevweek", dateColumn, sectionTitleColor, sectionFontColor, tableColor, tableFontColor, noDataColor, mergedColumns)
+    currentRow = WriteReportSection("Current Month", sourceWS, outputWS, columnsToExtract, matchColumn, targetValue, currentRow, "month", dateColumn, sectionTitleColor, sectionFontColor, tableColor, tableFontColor, noDataColor, mergedColumns)
+    currentRow = WriteReportSection("Previous Month", sourceWS, outputWS, columnsToExtract, matchColumn, targetValue, currentRow, "prevmonth", dateColumn, sectionTitleColor, sectionFontColor, tableColor, tableFontColor, noDataColor, mergedColumns)
+
+    MsgBox "All reports extracted successfully.", vbInformation
+End Sub
+
+Function WriteReportSection(title As String, src As Worksheet, dest As Worksheet, cols As Variant, _
+    matchCol As String, matchVal As String, startRow As Long, mode As String, dateCol As String, _
+    titleColor As Long, titleFontColor As Long, tableColor As Long, tableFontColor As Long, _
+    noDataColor As Long, mergedColumns As Object) As Long
+
+    Dim countVal As Long
+    Dim resultRow As Long: resultRow = startRow
+    Dim titleRange As Range, countRange As Range
+
+    ' === TITLE + COUNT IN SAME ROW ===
+    Set titleRange = dest.Range(dest.Cells(resultRow, 1), dest.Cells(resultRow, 21)) ' A to U
+    Set countRange = dest.Range(dest.Cells(resultRow, 22), dest.Cells(resultRow, 23)) ' V to W
+
+    titleRange.Merge
+    titleRange.Value = "Major Incidents - " & title
+    With titleRange
+        .Interior.Color = titleColor
+        .Font.Color = titleFontColor
+        .Font.Bold = True
+        .Font.Size = 12
+        .HorizontalAlignment = xlLeft
+    End With
+
+    ' === Count retrieval ===
+    If mode = "filter" Then
+        countVal = WriteTableWithFilter(src, dest, cols, matchCol, matchVal, resultRow + 2, matchCol, True, tableColor, tableFontColor, tableColor, tableFontColor, mergedColumns)
+    Else
+        countVal = WriteTableWithDateRange(src, dest, cols, resultRow + 2, dateCol, mode, tableColor, tableFontColor, tableColor, tableFontColor, mergedColumns)
+    End If
+
+    ' === COUNT CELL ===
+    countRange.Merge
+    countRange.Value = countVal & " incident(s)"
+    With countRange
+        .Font.Bold = True
+        .Font.Size = 11
+        .HorizontalAlignment = xlRight
+        If countVal = 0 Then
+            .Interior.Color = noDataColor
+            .Font.Color = RGB(255, 255, 255)
+        Else
+            .Interior.Color = tableColor
+            .Font.Color = tableFontColor
+        End If
+    End With
+
+    If countVal = 0 Then
+        ' === NO DATA MESSAGE ===
+        With dest.Range(dest.Cells(resultRow + 1, 7), dest.Cells(resultRow + 1, 15)) ' G to O
+            .Merge
+            .Value = "No Major Incidents Reported"
+            .Interior.Color = noDataColor
+            .Font.Color = RGB(255, 255, 255)
+            .Font.Bold = True
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+        End With
+        WriteReportSection = resultRow + 3
+    Else
+        WriteReportSection = dest.Cells(dest.Rows.Count, 1).End(xlUp).Row + 2
+    End If
+
+End Function
+
+Function WriteTableWithFilter(src As Worksheet, dest As Worksheet, cols As Variant, _
+    matchCol As String, matchVal As String, startRow As Long, checkCol As String, addHeader As Boolean, _
+    tblColor As Long, tblFont As Long, hdrColor As Long, hdrFont As Long, mergedColumns As Object) As Long
+
+    Dim i As Long, rowOut As Long, lastRow As Long
+    Dim outCol As Long, colIndex As Long, spanCount As Integer
+    Dim colLetter As Variant, headerRow As Long
+
+    rowOut = startRow
+    headerRow = rowOut - 1
+    lastRow = src.Cells(src.Rows.Count, matchCol).End(xlUp).Row
+
+    Dim matchCount As Long: matchCount = 0
+
+    If addHeader Then
+        outCol = 1
+        For Each colLetter In cols
+            colIndex = Columns(colLetter).Column
+            spanCount = 1
+            If mergedColumns.Exists(colLetter) Then spanCount = mergedColumns(colLetter)
+
+            With dest.Range(dest.Cells(headerRow, outCol), dest.Cells(headerRow, outCol + spanCount - 1))
+                .Merge
+                .Value = src.Cells(1, colIndex).Value
+                .Interior.Color = hdrColor
+                .Font.Color = hdrFont
+                .Font.Bold = True
+                .HorizontalAlignment = xlCenter
+                .VerticalAlignment = xlCenter
+            End With
+            outCol = outCol + spanCount
+        Next colLetter
+    End If
+
+    For i = 2 To lastRow
+        If Trim(UCase(src.Cells(i, checkCol).Value)) = UCase(matchVal) Then
+            outCol = 1
+            For Each colLetter In cols
+                colIndex = Columns(colLetter).Column
+                spanCount = 1
+                If mergedColumns.Exists(colLetter) Then spanCount = mergedColumns(colLetter)
+
+                With dest.Range(dest.Cells(rowOut, outCol), dest.Cells(rowOut, outCol + spanCount - 1))
+                    .Merge
+                    .Value = src.Cells(i, colIndex).Value
+                    .Interior.Color = tblColor
+                    .Font.Color = tblFont
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                End With
+                outCol = outCol + spanCount
+            Next colLetter
+            rowOut = rowOut + 1
+            matchCount = matchCount + 1
+        End If
+    Next i
+
+    WriteTableWithFilter = matchCount
+End Function
+
+Function WriteTableWithDateRange(src As Worksheet, dest As Worksheet, cols As Variant, _
+    startRow As Long, dateCol As String, mode As String, _
+    tblColor As Long, tblFont As Long, hdrColor As Long, hdrFont As Long, mergedColumns As Object) As Long
+
+    Dim i As Long, rowOut As Long, lastRow As Long
+    Dim outCol As Long, colIndex As Long, spanCount As Integer
+    Dim colLetter As Variant, headerRow As Long
+    Dim todayDate As Date, startDate As Date, endDate As Date
+    Dim dateVal As Variant
+
+    rowOut = startRow
+    headerRow = rowOut - 1
+    lastRow = src.Cells(src.Rows.Count, dateCol).End(xlUp).Row
+    todayDate = Date
+
+    ' Determine range
+    Select Case mode
+        Case "week"
+            startDate = todayDate - Weekday(todayDate, vbMonday) + 1
+            endDate = startDate + 6
+        Case "prevweek"
+            startDate = todayDate - Weekday(todayDate, vbMonday) - 6
+            endDate = startDate + 6
+        Case "month"
+            startDate = WorksheetFunction.EoMonth(todayDate, -1) + 1
+            endDate = WorksheetFunction.EoMonth(todayDate, 0)
+        Case "prevmonth"
+            startDate = WorksheetFunction.EoMonth(todayDate, -2) + 1
+            endDate = WorksheetFunction.EoMonth(todayDate, -1)
+    End Select
+
+    ' Write headers
+    outCol = 1
+    For Each colLetter In cols
+        colIndex = Columns(colLetter).Column
+        spanCount = 1
+        If mergedColumns.Exists(colLetter) Then spanCount = mergedColumns(colLetter)
+
+        With dest.Range(dest.Cells(headerRow, outCol), dest.Cells(headerRow, outCol + spanCount - 1))
+            .Merge
+            .Value = src.Cells(1, colIndex).Value
+            .Interior.Color = hdrColor
+            .Font.Color = hdrFont
+            .Font.Bold = True
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+        End With
+        outCol = outCol + spanCount
+    Next colLetter
+
+    Dim matchCount As Long: matchCount = 0
+
+    For i = 2 To lastRow
+        dateVal = src.Cells(i, Columns(dateCol).Column).Value
+        If IsDate(dateVal) Then
+            If dateVal >= startDate And dateVal <= endDate Then
+                outCol = 1
+                For Each colLetter In cols
+                    colIndex = Columns(colLetter).Column
+                    spanCount = 1
+                    If mergedColumns.Exists(colLetter) Then spanCount = mergedColumns(colLetter)
+
+                    With dest.Range(dest.Cells(rowOut, outCol), dest.Cells(rowOut, outCol + spanCount - 1))
+                        .Merge
+                        .Value = src.Cells(i, colIndex).Value
+                        .Interior.Color = tblColor
+                        .Font.Color = tblFont
+                        .HorizontalAlignment = xlCenter
+                        .VerticalAlignment = xlCenter
+                    End With
+                    outCol = outCol + spanCount
+                Next colLetter
+                rowOut = rowOut + 1
+                matchCount = matchCount + 1
+            End If
+        End If
+    Next i
+
+    WriteTableWithDateRange = matchCount
+End Function
+
+
